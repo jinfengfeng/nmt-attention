@@ -11,13 +11,16 @@ import os
 import warnings
 import sys
 import time
+import ipdb
 
 from collections import OrderedDict
 
-from .utils import *
-from .layers import *
-from .optimizers import *
-from .sampling import *
+from nmtatt.utils import *
+from nmtatt.layers import *
+from nmtatt.optimizers import *
+from nmtatt.sampling import *
+from nmtatt.models import *
+from data_iterator import TextIterator
 
 
 

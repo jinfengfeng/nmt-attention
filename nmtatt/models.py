@@ -3,7 +3,6 @@ import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 import cPickle as pkl
-import ipdb
 import numpy
 import copy
 
@@ -159,7 +158,7 @@ def build_model(tparams, options):
     y_flat_idx = tensor.arange(y_flat.shape[0]) * options['n_words'] + y_flat
     cost = -tensor.log(probs.flatten()[y_flat_idx])
     cost = cost.reshape([y.shape[0], y.shape[1]])
-    cost = (cost * y_mask).sum(0) / y_mask.sum()
+    cost = (cost * y_mask).sum() / y_mask.sum()
 
     # accuracy
     pred = probs.argmax(axis=-1)

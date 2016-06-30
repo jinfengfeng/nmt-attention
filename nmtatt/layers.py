@@ -3,7 +3,6 @@ import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 import cPickle as pkl
-import ipdb
 import numpy
 import copy
 
@@ -14,9 +13,12 @@ import time
 
 from collections import OrderedDict
 
+from .utils import _p, _slice
 from .utils import *
 
 
+
+profile = False
 
 layers = {'ff': ('param_init_fflayer', 'fflayer'),
           'gru': ('param_init_gru', 'gru_layer'),

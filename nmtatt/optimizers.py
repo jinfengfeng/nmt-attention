@@ -3,7 +3,6 @@ import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 import cPickle as pkl
-import ipdb
 import numpy
 import copy
 
@@ -12,11 +11,12 @@ import warnings
 import sys
 import time
 
-from collections import 
+from collections import OrderedDict
 
 from .utils import *
 
 
+profile = False
 
 # optimizers
 # name(hyperp, tparams, grads, inputs (list), cost) = f_grad_shared, f_update
