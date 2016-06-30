@@ -252,4 +252,25 @@ def build_sampler(tparams, options, trng, use_noise):
 
     return f_init, f_next
 
-    
+
+# calculate the log probablities on a given corpus using translation model
+def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):
+    loss = 0.0
+    acc = 0.0
+    num = 0
+
+    for x, y in iterator:
+        x, x_mask, y, y_mask = prepare_data(x, y,
+                                            n_words_src=options['n_words_src'],
+                                            n_words=options['n_words'])
+
+        batch_loss, batch_acc = f_log_probs(x, x_mask, y, y_mask)
+        batch_num = y_mask.sum()
+
+        loss += batch_loss * batch_num
+        acc += batch_acc * batch_num
+        num += batch_num
+    loss /= num
+    acc /= num
+    return loss, acc
+

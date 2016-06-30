@@ -17,6 +17,7 @@ from collections import OrderedDict
 from .utils import *
 from .layers import *
 from .optimizers import *
+from .sampling import *
 
 
 
@@ -97,7 +98,7 @@ def train(dim_word=100,  # word vector dimensionality
     trng, use_noise, \
         x, x_mask, y, y_mask, \
         opt_ret, \
-        cost = \
+        cost, acc = \
         build_model(tparams, model_options)
     inps = [x, x_mask, y, y_mask]
 
@@ -106,7 +107,7 @@ def train(dim_word=100,  # word vector dimensionality
 
     # before any regularizer
     print 'Building f_log_probs...',
-    f_log_probs = theano.function(inps, cost, profile=profile)
+    f_log_probs = theano.function(inps, [cost, acc], profile=profile)
     print 'Done'
 
     cost = cost.mean()
@@ -176,6 +177,8 @@ def train(dim_word=100,  # word vector dimensionality
     if sampleFreq == -1:
         sampleFreq = len(train[0])/batch_size
 
+    start_time = time.time()
+
     for eidx in xrange(max_epochs):
         n_samples = 0
 
@@ -193,15 +196,12 @@ def train(dim_word=100,  # word vector dimensionality
                 uidx -= 1
                 continue
 
-            ud_start = time.time()
 
             # compute cost, grads and copy grads to shared variables
             cost = f_grad_shared(x, x_mask, y, y_mask)
 
             # do the update on parameters
             f_update(lrate)
-
-            ud = time.time() - ud_start
 
             # check for bad numbers, usually we remove non-finite elements
             # and continue training - but not done here
@@ -211,7 +211,9 @@ def train(dim_word=100,  # word vector dimensionality
 
             # verbose
             if numpy.mod(uidx, dispFreq) == 0:
-                print 'Epoch ', eidx, 'Update ', uidx, 'Cost ', cost, 'UD ', ud
+                print 'Epoch ', eidx, ', Update ', uidx, ', Cost ', cost, ', Used time ', \
+                    time.time() - start_time
+                start_time = time.time()
 
             # save the best model so far, in addition, save the latest model
             # into a separate file with the iteration number for external eval
@@ -282,15 +284,13 @@ def train(dim_word=100,  # word vector dimensionality
             # validate model on validation set and early stop if necessary
             if numpy.mod(uidx, validFreq) == 0:
                 use_noise.set_value(0.)
-                valid_errs = pred_probs(f_log_probs, prepare_data,
-                                        model_options, valid)
-                valid_err = valid_errs.mean()
-                history_errs.append(valid_err)
+                valid_loss, valid_acc = pred_probs(f_log_probs, prepare_data, model_options, valid)
+                history_errs.append(valid_loss)
 
-                if uidx == 0 or valid_err <= numpy.array(history_errs).min():
+                if uidx == 0 or valid_loss <= numpy.array(history_errs).min():
                     best_p = unzip(tparams)
                     bad_counter = 0
-                if len(history_errs) > patience and valid_err >= \
+                if len(history_errs) > patience and valid_loss >= \
                         numpy.array(history_errs)[:-patience].min():
                     bad_counter += 1
                     if bad_counter > patience:
@@ -298,10 +298,10 @@ def train(dim_word=100,  # word vector dimensionality
                         estop = True
                         break
 
-                if numpy.isnan(valid_err):
+                if numpy.isnan(valid_loss):
                     ipdb.set_trace()
 
-                print 'Valid ', valid_err
+                print 'Valid loss = %.4f, valid acc = %.4f'%(valid_loss, valid_acc)
 
             # finish after this many updates
             if uidx >= finish_after:
@@ -318,10 +318,9 @@ def train(dim_word=100,  # word vector dimensionality
         zipp(best_p, tparams)
 
     use_noise.set_value(0.)
-    valid_err = pred_probs(f_log_probs, prepare_data,
-                           model_options, valid).mean()
-
-    print 'Valid ', valid_err
+    valid_loss, valid_acc = pred_probs(f_log_probs, prepare_data,
+                                        model_options, valid)
+    print 'Valid loss = %.4f, valid acc = %.4f'%(valid_loss, valid_acc)
 
     params = copy.copy(best_p)
     numpy.savez(saveto, zipped_params=best_p,
@@ -329,5 +328,5 @@ def train(dim_word=100,  # word vector dimensionality
                 uidx=uidx,
                 **params)
 
-    return valid_err
+    return valid_loss
 
