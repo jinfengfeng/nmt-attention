@@ -159,9 +159,15 @@ def build_model(tparams, options):
     y_flat_idx = tensor.arange(y_flat.shape[0]) * options['n_words'] + y_flat
     cost = -tensor.log(probs.flatten()[y_flat_idx])
     cost = cost.reshape([y.shape[0], y.shape[1]])
-    cost = (cost * y_mask).sum(0)
+    cost = (cost * y_mask).sum(0) / y_mask.sum()
 
-    return trng, use_noise, x, x_mask, y, y_mask, opt_ret, cost
+    # accuracy
+    pred = probs.argmax(axis=-1)
+    pred = pred.reshape(y.shape)
+    acc = theano.tensor.eq(pred, y)
+    acc = (acc * y_mask).sum() / y_mask.sum()
+
+    return trng, use_noise, x, x_mask, y, y_mask, opt_ret, cost, acc
 
 
 # build a sampler
