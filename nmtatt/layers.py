@@ -22,6 +22,7 @@ profile = False
 
 layers = {'ff': ('param_init_fflayer', 'fflayer'),
           'gru': ('param_init_gru', 'gru_layer'),
+          'lstm': ('param_init_lstm', 'lstm_layer'),
           'gru_cond': ('param_init_gru_cond', 'gru_cond_layer'),
           }
 
@@ -102,7 +103,7 @@ def param_init_gru(options, params, prefix='gru', nin=None, dim=None):
 
 
 def gru_layer(tparams, state_below, options, prefix='gru', mask=None,
-              **kwargs):
+              init_states=None, **kwargs):
     nsteps = state_below.shape[0]
     if state_below.ndim == 3:
         n_samples = state_below.shape[1]
@@ -148,7 +149,8 @@ def gru_layer(tparams, state_below, options, prefix='gru', mask=None,
 
     # prepare scan arguments
     seqs = [mask, state_below_, state_belowx]
-    init_states = [tensor.alloc(0., n_samples, dim)]
+    if init_states is None:
+        init_states = [tensor.alloc(0., n_samples, dim)]
     _step = _step_slice
     shared_vars = [tparams[_p(prefix, 'U')],
                    tparams[_p(prefix, 'Ux')]]
@@ -231,7 +233,7 @@ def param_init_gru_cond(options, params, prefix='gru_cond',
     return params
 
 
-def gru_cond_layer(tparams, state_below, options, prefix='gru',
+def gru_cond_layer(tparams, state_below, options, prefix='gru_cond',
                    mask=None, context=None, one_step=False,
                    init_memory=None, init_state=None,
                    context_mask=None,
@@ -301,7 +303,8 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
         if context_mask:
             alpha = alpha * context_mask
         alpha = alpha / alpha.sum(0, keepdims=True)
-        ctx_ = (cc_ * alpha[:, :, None]).sum(0)  # current context
+        # current context, i.e. context for each step; cc_ is original context
+        ctx_ = (cc_ * alpha[:, :, None]).sum(0)  
 
         preact2 = tensor.dot(h1, U_nl)+b_nl
         preact2 += tensor.dot(ctx_, Wc)
@@ -354,4 +357,76 @@ def gru_cond_layer(tparams, state_below, options, prefix='gru',
                                     profile=profile,
                                     strict=True)
     return rval
+
+
+# LSTM layer
+def param_init_lstm(options, params, prefix='lstm', nin=None, dim=None):
+    if nin is None:
+        nin = options['dim_proj']
+    if dim is None:
+        dim = options['dim_proj']
+
+    W = numpy.concatenate([norm_weight(nin, dim),
+                           norm_weight(nin, dim),
+                           norm_weight(nin, dim),
+                           norm_weight(nin, dim)], axis=1)
+    params[_p(prefix, 'W')] = W
+    
+    U = numpy.concatenate([ortho_weight(dim),
+                           ortho_weight(dim),
+                           ortho_weight(dim),
+                           ortho_weight(dim)], axis=1)
+    params[_p(prefix, 'U')] = U
+
+    b = numpy.zeros((4 * dim,))
+    params[_p(prefix, 'b')] = b.astype(config.floatX)
+
+    return params
+
+
+def lstm_layer(tparams, state_below, options, prefix='lstm', mask=None,
+                **kwargs):
+    nsteps = state_below.shape[0]
+    if state_below.ndim == 3:
+        n_samples = state_below.shape[1]
+    else:
+        n_samples = 1
+
+    dim = tparams[_p(prefix, 'U')].shape[1]
+
+    if mask is None:
+        mask = tensor.alloc(1., state_below.shape[0], 1)
+
+    state_below = (tensor.dot(state_below, tparams[_p(prefix, 'W')]) +
+                   tparams[_p(prefix, 'b')])
+    
+    # arguments:    sequences |outputs-info| non-seqs
+    def _step(m_, x_, h_, c_, U):
+        preact = tensor.dot(h_, U)
+        preact += x_
+
+        i = tensor.nnet.sigmoid(_slice(preact, 0, dim))
+        f = tensor.nnet.sigmoid(_slice(preact, 1, dim))
+        o = tensor.nnet.sigmoid(_slice(preact, 2, dim))
+        c = tensor.tanh(_slice(preact, 3, dim))
+
+        c = f * c_ + i * c
+        c = m_[:, None] * c + (1. - m_)[:, None] * c_
+
+        h = o * tensor.tanh(c)
+        h = m_[:, None] * h + (1. - m_)[:, None] * h_
+
+        return h, c
+
+    rval, updates = theano.scan(_step,
+                                sequences=[mask, state_below],
+                                outputs_info=[tensor.alloc(0, n_samples, dim),
+                                              tensor.alloc(0, n_samples, dim)],
+                                name=_p(prefix, '_layers'),
+                                n_steps=nsteps,
+                                profile=profile,
+                                strict=True)
+    rval = [rval]
+    return rval
+
 
